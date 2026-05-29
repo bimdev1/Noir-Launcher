@@ -194,7 +194,7 @@ fun LauncherHomeScreen(viewModel: LauncherViewModel) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(bottom = 12.dp, start = 16.dp, end = 16.dp),
+                            .padding(bottom = 24.dp, start = 16.dp, end = 16.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         // Glassmorphic Elegant Dark Dock Card
@@ -267,16 +267,6 @@ fun LauncherHomeScreen(viewModel: LauncherViewModel) {
                                 )
                             }
                         }
-
-                        Spacer(modifier = Modifier.height(14.dp))
-
-                        // Bottom modern navigation bar line pill
-                        Box(
-                            modifier = Modifier
-                                .width(96.dp)
-                                .height(4.dp)
-                                .background(Color.White.copy(alpha = 0.2f), CircleShape)
-                        )
                     }
                 }
             }
