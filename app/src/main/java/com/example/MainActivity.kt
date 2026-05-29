@@ -3,6 +3,14 @@ package com.example
 import android.app.Application
 import android.content.Context
 import android.content.Intent
+import android.Manifest
+import android.annotation.SuppressLint
+import android.app.role.RoleManager
+import android.os.Build
+import android.provider.Settings
+import com.google.android.gms.location.LocationServices
+import com.google.accompanist.permissions.ExperimentalPermissionsApi
+import com.google.accompanist.permissions.rememberMultiplePermissionsState
 import android.net.Uri
 import android.os.Bundle
 import android.widget.ImageView
@@ -64,7 +72,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalPermissionsApi::class)
 @Composable
 fun LauncherHomeScreen(viewModel: LauncherViewModel) {
     val context = LocalContext.current
@@ -72,6 +80,46 @@ fun LauncherHomeScreen(viewModel: LauncherViewModel) {
     val settings by viewModel.launcherSettings.collectAsStateWithLifecycle()
     val query by viewModel.searchQuery.collectAsStateWithLifecycle()
     val currentCategory by viewModel.selectedCategory.collectAsStateWithLifecycle()
+
+    val weatherTemp by viewModel.weatherTemp.collectAsStateWithLifecycle()
+    val weatherLocality by viewModel.weatherLocality.collectAsStateWithLifecycle()
+    val weatherLoading by viewModel.weatherLoading.collectAsStateWithLifecycle()
+
+    val locationPermissionState = rememberMultiplePermissionsState(
+        permissions = listOf(
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACCESS_COARSE_LOCATION
+        )
+    )
+
+    val fusedLocationClient = remember { LocationServices.getFusedLocationProviderClient(context) }
+
+    @SuppressLint("MissingPermission")
+    fun fetchCurrentLocation() {
+        try {
+            fusedLocationClient.lastLocation.addOnSuccessListener { location ->
+                if (location != null) {
+                    viewModel.updateWeatherForLocation(location.latitude, location.longitude)
+                } else {
+                    val priority = com.google.android.gms.location.Priority.PRIORITY_BALANCED_POWER_ACCURACY
+                    fusedLocationClient.getCurrentLocation(priority, null)
+                        .addOnSuccessListener { loc ->
+                            if (loc != null) {
+                                viewModel.updateWeatherForLocation(loc.latitude, loc.longitude)
+                            }
+                        }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    LaunchedEffect(locationPermissionState.allPermissionsGranted) {
+        if (locationPermissionState.allPermissionsGranted) {
+            fetchCurrentLocation()
+        }
+    }
 
     var isDrawerOpen by remember { mutableStateOf(false) }
     var activeAppForOptions by remember { mutableStateOf<AppItem?>(null) }
@@ -110,8 +158,33 @@ fun LauncherHomeScreen(viewModel: LauncherViewModel) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(backgroundBrush)
+            .background(if (wallpaperType == "Custom Image") Color.Black else Color.Transparent)
+            .then(
+                if (wallpaperType != "Custom Image") {
+                    Modifier.background(backgroundBrush)
+                } else {
+                    Modifier
+                }
+            )
     ) {
+        if (wallpaperType == "Custom Image") {
+            coil.compose.AsyncImage(
+                model = if (wallpaperPreset.startsWith("http://") || wallpaperPreset.startsWith("https://")) {
+                    wallpaperPreset
+                } else {
+                    "https://images.unsplash.com/photo-1518531933037-91b2f5f229cc?w=1080"
+                },
+                contentDescription = "Custom Wallpaper Image",
+                modifier = Modifier.fillMaxSize(),
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop
+            )
+            // Overlay dimming layer for text contrast
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.5f))
+            )
+        }
         // SYSTEM SAFE AREAS CONTAINER
         Scaffold(
             containerColor = Color.Transparent,
@@ -250,20 +323,43 @@ fun LauncherHomeScreen(viewModel: LauncherViewModel) {
 
                     // Unified Weather + Time + Greet row
                     Row(
-                        modifier = Modifier.padding(top = 10.dp),
+                        modifier = Modifier
+                            .padding(top = 10.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable {
+                                if (!locationPermissionState.allPermissionsGranted) {
+                                    locationPermissionState.launchMultiplePermissionRequest()
+                                } else {
+                                    fetchCurrentLocation()
+                                }
+                            }
+                            .padding(vertical = 4.dp, horizontal = 6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Star,
+                            imageVector = if (weatherLoading) Icons.Default.Refresh else Icons.Default.Star,
                             contentDescription = "Weather info icon",
                             tint = Color(0xFFD0E4FF),
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "72°F",
+                            text = if (weatherLoading) "Locating..." else (weatherTemp ?: "72°F"),
                             color = Color(0xFFE2E2E6),
                             fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = "•",
+                            color = Color(0xFFBBC7DB).copy(alpha = 0.4f),
+                            fontSize = 14.sp
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = weatherLocality,
+                            color = Color(0xFFBBC7DB),
+                            fontSize = 13.5.sp,
                             fontWeight = FontWeight.Medium
                         )
                         Spacer(modifier = Modifier.width(10.dp))
@@ -1181,6 +1277,88 @@ fun LauncherSettingsDialog(
                 ) {
                     when (activeTab) {
                         "Options" -> {
+                            val isDefaultLauncher = remember {
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                                    val rm = viewModel.getApplication<Application>().getSystemService(Context.ROLE_SERVICE) as? RoleManager
+                                    rm?.isRoleHeld(RoleManager.ROLE_HOME) ?: false
+                                } else {
+                                    false
+                                }
+                            }
+                            
+                            val displayContext = LocalContext.current
+
+                            Text(
+                                text = "DEFAULT SYSTEM LAUNCHER",
+                                color = Color.White.copy(alpha = 0.4f),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 1.sp
+                            )
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(Color.White.copy(alpha = 0.05f))
+                                    .clickable {
+                                        try {
+                                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                                                val roleManager = displayContext.getSystemService(Context.ROLE_SERVICE) as RoleManager
+                                                if (roleManager.isRoleAvailable(RoleManager.ROLE_HOME)) {
+                                                    val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_HOME)
+                                                    displayContext.startActivity(intent)
+                                                } else {
+                                                    val intent = Intent(Settings.ACTION_HOME_SETTINGS)
+                                                    displayContext.startActivity(intent)
+                                                }
+                                            } else {
+                                                val intent = Intent(Settings.ACTION_HOME_SETTINGS)
+                                                displayContext.startActivity(intent)
+                                            }
+                                        } catch (e: Exception) {
+                                            try {
+                                                val intent = Intent(Settings.ACTION_HOME_SETTINGS)
+                                                displayContext.startActivity(intent)
+                                            } catch (ex: Exception) {
+                                                Toast.makeText(displayContext, "Could not open default launcher settings.", Toast.LENGTH_LONG).show()
+                                            }
+                                        }
+                                    }
+                                    .padding(16.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = if (isDefaultLauncher) "Fossify is Default Launcher" else "Set as Default Launcher",
+                                            color = Color.White,
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                        Text(
+                                            text = if (isDefaultLauncher) "Fossify is managing your default home screen." else "Configure system preference to Fossify.",
+                                            color = Color.White.copy(alpha = 0.5f),
+                                            fontSize = 11.sp
+                                        )
+                                    }
+                                    
+                                    Icon(
+                                        imageVector = if (isDefaultLauncher) Icons.Default.CheckCircle else Icons.Default.Home,
+                                        contentDescription = "Default status",
+                                        tint = if (isDefaultLauncher) Color(0xFFD0E4FF) else Color.White.copy(alpha = 0.4f),
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(24.dp))
+
                             // User Greeting Configurations
                             Text(
                                 text = "PERSONALIZE WELCOME GREETING",
@@ -1368,7 +1546,7 @@ fun LauncherSettingsDialog(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                listOf("Gradient", "Solid").forEach { wallStyle ->
+                                listOf("Gradient", "Solid", "Custom Image").forEach { wallStyle ->
                                     val isSel = currentWallpaperType == wallStyle
                                     Box(
                                         modifier = Modifier
@@ -1377,8 +1555,12 @@ fun LauncherSettingsDialog(
                                             .background(if (isSel) Color(0xFFEB5E28) else Color.White.copy(alpha = 0.05f))
                                             .clickable {
                                                 viewModel.saveLauncherConfigSetting("wallpaper_type", wallStyle)
-                                                // Reset presets back to standard
-                                                val defPreset = if (wallStyle == "Gradient") "Cosmic Night" else "Pitch Black"
+                                                // Reset presets back to standard default
+                                                val defPreset = when (wallStyle) {
+                                                    "Gradient" -> "Cosmic Night"
+                                                    "Solid" -> "Dark Cosmic"
+                                                    else -> "https://images.unsplash.com/photo-1518531933037-91b2f5f229cc?w=1080"
+                                                }
                                                 viewModel.saveLauncherConfigSetting("wallpaper_preset", defPreset)
                                             }
                                             .padding(vertical = 10.dp),
@@ -1388,7 +1570,8 @@ fun LauncherSettingsDialog(
                                             text = wallStyle,
                                             color = Color.White,
                                             fontWeight = FontWeight.Bold,
-                                            fontSize = 13.sp
+                                            fontSize = 11.5.sp,
+                                            maxLines = 1
                                         )
                                     }
                                 }
@@ -1396,66 +1579,161 @@ fun LauncherSettingsDialog(
 
                             Spacer(modifier = Modifier.height(24.dp))
 
-                            Text(
-                                text = "SELECT ART PRESETS COLOR",
-                                color = Color.White.copy(alpha = 0.4f),
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = 1.sp
-                            )
+                            if (currentWallpaperType == "Custom Image") {
+                                Text(
+                                    text = "ENTER CUSTOM IMAGE URL",
+                                    color = Color.White.copy(alpha = 0.4f),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 1.sp
+                                )
+                                Spacer(modifier = Modifier.height(10.dp))
+                                
+                                var imageInputText by remember { mutableStateOf(currentWallpaperPreset) }
+                                TextField(
+                                    value = imageInputText,
+                                    onValueChange = {
+                                        imageInputText = it
+                                        viewModel.saveLauncherConfigSetting("wallpaper_preset", it)
+                                    },
+                                    placeholder = { Text("https://example.com/wallpaper.jpg", color = Color.Gray) },
+                                    colors = TextFieldDefaults.colors(
+                                        focusedTextColor = Color.White,
+                                        unfocusedTextColor = Color.White,
+                                        focusedContainerColor = Color.White.copy(alpha = 0.04f),
+                                        unfocusedContainerColor = Color.White.copy(alpha = 0.04f)
+                                    ),
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true
+                                )
+                                
+                                Spacer(modifier = Modifier.height(20.dp))
 
-                            Spacer(modifier = Modifier.height(10.dp))
+                                Text(
+                                    text = "PRESET AESTHETIC LINKS",
+                                    color = Color.White.copy(alpha = 0.4f),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 1.sp
+                                )
+                                Spacer(modifier = Modifier.height(10.dp))
 
-                            val presets = if (currentWallpaperType == "Gradient") {
-                                listOf("Cosmic Night", "Sunset Dusk", "Forest Aurora", "Oceanic Breeze", "Cosmic Amethyst")
-                            } else {
-                                listOf("Dark Cosmic", "Ivory White", "Pitch Black", "Indigo Midnight", "Pastel Sage")
-                            }
+                                val picPresets = listOf(
+                                    "Warm Colorful Gradient" to "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=1080",
+                                    "Dark Botanical Nature" to "https://images.unsplash.com/photo-1518531933037-91b2f5f229cc?w=1080",
+                                    "Elegant Liquid Wave" to "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=1080",
+                                    "Celestial Milky Way" to "https://images.unsplash.com/photo-1528459801416-a9e53bbf4e17?w=1080"
+                                )
 
-                            Column(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                presets.forEach { pres ->
-                                    val isSelected = currentWallpaperPreset == pres
-                                    val tempBrush = getBackgroundBrush(currentWallpaperType, pres)
-                                    
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(56.dp)
-                                            .clip(RoundedCornerShape(14.dp))
-                                            .background(tempBrush)
-                                            .clickable {
-                                                viewModel.saveLauncherConfigSetting("wallpaper_preset", pres)
-                                            }
-                                            .border(
-                                                width = if (isSelected) 3.dp else 0.dp,
-                                                color = if (isSelected) Color(0xFFEB5E28) else Color.Transparent,
-                                                shape = RoundedCornerShape(14.dp)
-                                            )
-                                            .padding(horizontal = 16.dp),
-                                        contentAlignment = Alignment.CenterStart
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text(
-                                                text = pres,
-                                                color = if (pres == "Ivory White") Color.Black else Color.White,
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 14.sp
-                                            )
-                                            
-                                            if (isSelected) {
-                                                Icon(
-                                                    imageVector = Icons.Default.CheckCircle,
-                                                    contentDescription = "Selected",
-                                                    tint = Color(0xFFEB5E28),
-                                                    modifier = Modifier.size(22.dp)
+                                Column(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    picPresets.forEach { item ->
+                                        val isSelected = currentWallpaperPreset == item.second
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(50.dp)
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .background(Color.White.copy(alpha = 0.05f))
+                                                .clickable {
+                                                    imageInputText = item.second
+                                                    viewModel.saveLauncherConfigSetting("wallpaper_preset", item.second)
+                                                }
+                                                .border(
+                                                    width = if (isSelected) 2.dp else 0.dp,
+                                                    color = if (isSelected) Color(0xFFEB5E28) else Color.Transparent,
+                                                    shape = RoundedCornerShape(12.dp)
                                                 )
+                                                .padding(horizontal = 16.dp),
+                                            contentAlignment = Alignment.CenterStart
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(
+                                                    text = item.first,
+                                                    color = Color.White,
+                                                    fontWeight = FontWeight.Medium,
+                                                    fontSize = 13.sp
+                                                )
+                                                if (isSelected) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.CheckCircle,
+                                                        contentDescription = "Selected",
+                                                        tint = Color(0xFFEB5E28),
+                                                        modifier = Modifier.size(20.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                Text(
+                                    text = "SELECT ART PRESETS COLOR",
+                                    color = Color.White.copy(alpha = 0.4f),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 1.sp
+                                )
+
+                                Spacer(modifier = Modifier.height(10.dp))
+
+                                val presets = if (currentWallpaperType == "Gradient") {
+                                    listOf("Cosmic Night", "Sunset Dusk", "Forest Aurora", "Oceanic Breeze", "Cosmic Amethyst")
+                                } else {
+                                    listOf("Dark Cosmic", "Ivory White", "Pitch Black", "Indigo Midnight", "Pastel Sage")
+                                }
+
+                                Column(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    presets.forEach { pres ->
+                                        val isSelected = currentWallpaperPreset == pres
+                                        val tempBrush = getBackgroundBrush(currentWallpaperType, pres)
+                                        
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(56.dp)
+                                                .clip(RoundedCornerShape(14.dp))
+                                                .background(tempBrush)
+                                                .clickable {
+                                                    viewModel.saveLauncherConfigSetting("wallpaper_preset", pres)
+                                                }
+                                                .border(
+                                                    width = if (isSelected) 3.dp else 0.dp,
+                                                    color = if (isSelected) Color(0xFFEB5E28) else Color.Transparent,
+                                                    shape = RoundedCornerShape(14.dp)
+                                                )
+                                                .padding(horizontal = 16.dp),
+                                            contentAlignment = Alignment.CenterStart
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(
+                                                    text = pres,
+                                                    color = if (pres == "Ivory White") Color.Black else Color.White,
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 14.sp
+                                                )
+                                                
+                                                if (isSelected) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.CheckCircle,
+                                                        contentDescription = "Selected",
+                                                        tint = Color(0xFFEB5E28),
+                                                        modifier = Modifier.size(22.dp)
+                                                    )
+                                                }
                                             }
                                         }
                                     }

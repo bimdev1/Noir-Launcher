@@ -283,4 +283,50 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             )
         )
     }
+
+    // --- Live Weather System ---
+    val weatherTemp = MutableStateFlow<String?>("72°F")
+    val weatherLocality = MutableStateFlow<String>("Live Weather")
+    val weatherError = MutableStateFlow<String?>(null)
+    val weatherLoading = MutableStateFlow<Boolean>(false)
+
+    fun updateWeatherForLocation(latitude: Double, longitude: Double) {
+        weatherLoading.value = true
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                // Fetch location city name via Geocoder
+                try {
+                    val geocoder = android.location.Geocoder(getApplication<Application>(), java.util.Locale.getDefault())
+                    val addresses = geocoder.getFromLocation(latitude, longitude, 1)
+                    if (!addresses.isNullOrEmpty()) {
+                        val address = addresses[0]
+                        val city = address.locality ?: address.subAdminArea ?: address.adminArea ?: "Live Location"
+                        weatherLocality.value = city
+                    }
+                } catch (e: Exception) {
+                    // Fallback
+                }
+
+                // Query weather forecast from Open-Meteo
+                val urlString = "https://api.open-meteo.com/v1/forecast?latitude=$latitude&longitude=$longitude&current_weather=true&temperature_unit=fahrenheit"
+                val client = okhttp3.OkHttpClient()
+                val request = okhttp3.Request.Builder().url(urlString).build()
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) throw java.io.IOException("Unexpected response: $response")
+                    val body = response.body?.string() ?: ""
+                    val json = org.json.JSONObject(body)
+                    val current = json.getJSONObject("current_weather")
+                    val temp = current.getDouble("temperature")
+                    val rounded = Math.round(temp)
+                    weatherTemp.value = "${rounded}°F"
+                    weatherError.value = null
+                }
+            } catch (e: Exception) {
+                weatherError.value = e.localizedMessage
+                // Keep default or previous temp if fails, but set error
+            } finally {
+                weatherLoading.value = false
+            }
+        }
+    }
 }
