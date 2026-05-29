@@ -664,18 +664,10 @@ fun AppLayoutGridItem(
             contentAlignment = Alignment.Center
         ) {
             if (app.systemIcon != null) {
-                // Highly robust native imageView wrapper
-                AndroidView(
-                    factory = { ctx ->
-                        ImageView(ctx).apply {
-                            scaleType = ImageView.ScaleType.FIT_CENTER
-                            setImageDrawable(app.systemIcon)
-                        }
-                    },
-                    modifier = Modifier.size(36.dp),
-                    update = { view ->
-                        view.setImageDrawable(app.systemIcon)
-                    }
+                Image(
+                    painter = coil.compose.rememberAsyncImagePainter(model = app.systemIcon),
+                    contentDescription = app.displayLabel,
+                    modifier = Modifier.size(36.dp)
                 )
             } else if (app.mockIcon != null) {
                 Icon(
@@ -935,12 +927,9 @@ fun AppOptionsDialog(
                     contentAlignment = Alignment.Center
                 ) {
                     if (app.systemIcon != null) {
-                        AndroidView(
-                            factory = { ctx ->
-                                ImageView(ctx).apply {
-                                    setImageDrawable(app.systemIcon)
-                                }
-                            },
+                        Image(
+                            painter = coil.compose.rememberAsyncImagePainter(model = app.systemIcon),
+                            contentDescription = app.displayLabel,
                             modifier = Modifier.size(36.dp)
                         )
                     } else if (app.mockIcon != null) {
@@ -1774,8 +1763,9 @@ fun LauncherSettingsDialog(
                                                         .background(Color.White.copy(alpha = 0.1f), CircleShape)
                                                 ) {
                                                     if (app.systemIcon != null) {
-                                                        AndroidView(
-                                                            factory = { ctx -> ImageImageView(ctx, app.systemIcon) },
+                                                        Image(
+                                                            painter = coil.compose.rememberAsyncImagePainter(model = app.systemIcon),
+                                                            contentDescription = app.displayLabel,
                                                             modifier = Modifier.size(36.dp)
                                                         )
                                                     } else if (app.mockIcon != null) {
