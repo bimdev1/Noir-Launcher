@@ -326,46 +326,38 @@ fun LauncherHomeScreen(viewModel: LauncherViewModel) {
 
                 // FAVORITES HOMESCREEN DOCK GRID
                 if (favoriteApps.isNotEmpty()) {
-                    Text(
-                        text = "FAVORITE APPS",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White.copy(alpha = 0.5f),
-                        letterSpacing = 1.5.sp,
+                    Column(
                         modifier = Modifier
-                            .fillMaxWidth(0.85f)
-                            .padding(top = 20.dp, bottom = 8.dp),
-                        textAlign = TextAlign.Start
-                    )
-
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth(0.9f)
-                            .clip(RoundedCornerShape(24.dp))
-                            .background(Color.White.copy(alpha = 0.05f))
-                            .padding(12.dp)
+                            .fillMaxWidth(0.95f)
+                            .padding(top = 24.dp, bottom = 24.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        LazyVerticalGrid(
-                            columns = GridCells.Fixed(columns),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(max = 300.dp),
-                            contentPadding = PaddingValues(4.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            items(favoriteApps) { app ->
-                                AppLayoutGridItem(
-                                    app = app,
-                                    showLabel = showLabels,
-                                    textColor = Color.White,
-                                    onLaunch = {
-                                        launchApp(context, app, viewModel)
-                                    },
-                                    onLongClick = {
-                                        activeAppForOptions = app
+                        // Dynamically slice the list into rows based on the user's column preference
+                        favoriteApps.chunked(columns).forEach { rowApps ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                // Populate the actual apps
+                                rowApps.forEach { app ->
+                                    Box(
+                                        modifier = Modifier.weight(1f),
+                                        contentAlignment = Alignment.TopCenter
+                                    ) {
+                                        AppLayoutGridItem(
+                                            app = app,
+                                            showLabel = showLabels,
+                                            textColor = Color.White,
+                                            onLaunch = { launchApp(context, app, viewModel) },
+                                            onLongClick = { activeAppForOptions = app }
+                                        )
                                     }
-                                )
+                                }
+                                
+                                // Fill any empty slots in the last row with invisible spacers to maintain perfect grid alignment
+                                repeat(columns - rowApps.size) {
+                                    Spacer(modifier = Modifier.weight(1f))
+                                }
                             }
                         }
                     }
