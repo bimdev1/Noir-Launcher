@@ -1,0 +1,6 @@
+{
+  "name": "Fossify Launcher",
+  "description": "A clean, elegant, and highly-customizable minimalist launcher inspired by Fossify.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
