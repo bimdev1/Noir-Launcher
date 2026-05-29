@@ -66,9 +66,13 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        WindowCompat.getInsetsController(window, window.decorView).apply {
-            hide(WindowInsetsCompat.Type.navigationBars())
-            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        try {
+            WindowCompat.getInsetsController(window, window.decorView).apply {
+                hide(WindowInsetsCompat.Type.navigationBars())
+                systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
         setContent {
             MyApplicationTheme {
@@ -133,10 +137,14 @@ fun LauncherHomeScreen(viewModel: LauncherViewModel) {
     var isSettingsOpen by remember { mutableStateOf(false) }
 
     // Settings data values from db state
-    val columns = settings["grid_columns"]?.toIntOrNull() ?: 4
+    val columns = (settings["grid_columns"]?.toIntOrNull() ?: 4).coerceAtLeast(1)
     val showLabels = settings["show_labels"]?.toBoolean() ?: true
     val accentColorHex = settings["theme_accent_color"] ?: "0xFFEB5E28"
-    val accentColor = Color(accentColorHex.toLongOrNull() ?: 0xFFEB5E28.toLong())
+    val accentColor = remember(accentColorHex) {
+        val cleanHex = accentColorHex.removePrefix("0x").removePrefix("#")
+        val colorVal = cleanHex.toLongOrNull(16) ?: 0xFFEB5E28L
+        Color(colorVal)
+    }
     val wallpaperType = settings["wallpaper_type"] ?: "Gradient"
     val wallpaperPreset = settings["wallpaper_preset"] ?: "Cosmic Night"
     val customGreet = settings["user_greet_name"] ?: "Tim"
@@ -145,6 +153,10 @@ fun LauncherHomeScreen(viewModel: LauncherViewModel) {
     // List of active favorite applications to show on the desktop workspace
     val favoriteApps = remember(allApps) {
         allApps.filter { it.isFavorite }
+    }
+
+    val dockApps = remember(allApps) {
+        allApps.filter { it.isDocked }.take(5)
     }
 
     // Visual Brush setup for dynamic backgrounds
@@ -204,62 +216,32 @@ fun LauncherHomeScreen(viewModel: LauncherViewModel) {
                         ) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
+                                horizontalArrangement = if (dockApps.isEmpty()) Arrangement.Center else Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                // Dial app shortcut (Highlighted in soft light-blue)
-                                QuickMainDockCallShortcut(
-                                    onClick = {
-                                        val intent = Intent(Intent.ACTION_DIAL)
-                                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                        try {
-                                            context.startActivity(intent)
-                                        } catch (e: Exception) {
-                                            Toast.makeText(context, "Dialer app not found", Toast.LENGTH_SHORT).show()
+                                if (dockApps.isEmpty()) {
+                                    Text(
+                                        text = "Long-press an app to pin to dock",
+                                        color = Color.White.copy(alpha = 0.5f),
+                                        fontSize = 12.sp,
+                                        modifier = Modifier.padding(vertical = 12.dp)
+                                    )
+                                } else {
+                                    dockApps.forEach { app ->
+                                        Box(
+                                            modifier = Modifier.weight(1f),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            AppLayoutGridItem(
+                                                app = app,
+                                                showLabel = false, // Dock items usually don't show labels
+                                                textColor = Color.White,
+                                                onLaunch = { launchApp(context, app, viewModel) },
+                                                onLongClick = { activeAppForOptions = app }
+                                            )
                                         }
                                     }
-                                )
-
-                                // Messages app shortcut
-                                QuickSubDockShortcut(
-                                    icon = Icons.Default.Send,
-                                    label = "Messages",
-                                    onClick = {
-                                        val intent = Intent(Intent.ACTION_MAIN).apply {
-                                            addCategory(Intent.CATEGORY_APP_MESSAGING)
-                                        }
-                                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                        try {
-                                            context.startActivity(intent)
-                                        } catch (e: Exception) {
-                                            Toast.makeText(context, "Messaging app not found", Toast.LENGTH_SHORT).show()
-                                        }
-                                    }
-                                )
-
-                                // Contacts app shortcut
-                                QuickSubDockShortcut(
-                                    icon = Icons.Default.Person,
-                                    label = "Contacts",
-                                    onClick = {
-                                        val intent = Intent(Intent.ACTION_MAIN).apply {
-                                            addCategory(Intent.CATEGORY_APP_CONTACTS)
-                                        }
-                                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                        try {
-                                            context.startActivity(intent)
-                                        } catch (e: Exception) {
-                                            Toast.makeText(context, "Contacts app not found", Toast.LENGTH_SHORT).show()
-                                        }
-                                    }
-                                )
-
-                                // Settings application launcher shortcut
-                                QuickSubDockShortcut(
-                                    icon = Icons.Default.Settings,
-                                    label = "Settings",
-                                    onClick = { isSettingsOpen = true }
-                                )
+                                }
                             }
                         }
                     }
@@ -449,6 +431,11 @@ fun LauncherHomeScreen(viewModel: LauncherViewModel) {
                     viewModel.toggleAppHidden(app.packageName, CustomAppSetting(packageName = app.packageName, isHidden = app.isHidden))
                     activeAppForOptions = null
                     Toast.makeText(context, if (app.isHidden) "Restored app to list" else "App hidden from list", Toast.LENGTH_SHORT).show()
+                },
+                onToggleDocked = {
+                    viewModel.toggleAppDocked(app.packageName, CustomAppSetting(packageName = app.packageName, isDocked = app.isDocked))
+                    activeAppForOptions = null
+                    Toast.makeText(context, if (app.isDocked) "Removed from dock" else "Pinned to dock", Toast.LENGTH_SHORT).show()
                 },
                 onRename = { customLabel ->
                     viewModel.renameApplication(app.packageName, customLabel, CustomAppSetting(packageName = app.packageName))
@@ -788,6 +775,7 @@ fun AppOptionsDialog(
     onDismiss: () -> Unit,
     onToggleFavorite: () -> Unit,
     onToggleHidden: () -> Unit,
+    onToggleDocked: () -> Unit,
     onRename: (String) -> Unit,
     onSetCategory: (String?) -> Unit
 ) {
@@ -965,6 +953,13 @@ fun AppOptionsDialog(
                             icon = if (app.isFavorite) Icons.Default.Close else Icons.Default.Star,
                             iconColor = if (app.isFavorite) Color.Red else Color.Yellow,
                             onClick = onToggleFavorite
+                        )
+
+                        ContextMenuItem(
+                            label = if (app.isDocked) "Unpin from Dock" else "Pin to Dock Workspace",
+                            icon = if (app.isDocked) Icons.Default.Close else Icons.Default.Add,
+                            iconColor = if (app.isDocked) Color.Red else Color(0xFFD0E4FF),
+                            onClick = onToggleDocked
                         )
 
                         ContextMenuItem(
@@ -1379,7 +1374,7 @@ fun LauncherSettingsDialog(
                                         modifier = Modifier
                                             .size(width = 90.dp, height = 40.dp)
                                             .clip(RoundedCornerShape(10.dp))
-                                            .background(Color(item.first.toLongOrNull() ?: 0L))
+                                            .background(Color(item.first.removePrefix("0x").removePrefix("#").toLongOrNull(16) ?: 0L))
                                             .clickable {
                                                 viewModel.saveLauncherConfigSetting("theme_accent_color", item.first)
                                             }

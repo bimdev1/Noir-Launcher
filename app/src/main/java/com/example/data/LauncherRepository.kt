@@ -22,25 +22,36 @@ class LauncherRepository(private val dao: LauncherDao) {
     }
 
     suspend fun toggleFavorite(packageName: String, currentSetting: CustomAppSetting?) {
-        val setting = currentSetting?.copy(isFavorite = !currentSetting.isFavorite) 
+        val existing = dao.getCustomAppSetting(packageName)
+        val setting = existing?.copy(isFavorite = !existing.isFavorite) 
             ?: CustomAppSetting(packageName = packageName, isFavorite = true)
         dao.insertCustomAppSetting(setting)
     }
 
     suspend fun toggleHidden(packageName: String, currentSetting: CustomAppSetting?) {
-        val setting = currentSetting?.copy(isHidden = !currentSetting.isHidden) 
+        val existing = dao.getCustomAppSetting(packageName)
+        val setting = existing?.copy(isHidden = !existing.isHidden) 
             ?: CustomAppSetting(packageName = packageName, isHidden = true)
         dao.insertCustomAppSetting(setting)
     }
 
+    suspend fun toggleDocked(packageName: String, currentSetting: CustomAppSetting?) {
+        val existing = dao.getCustomAppSetting(packageName)
+        val setting = existing?.copy(isDocked = !existing.isDocked)
+            ?: CustomAppSetting(packageName = packageName, isDocked = true)
+        dao.insertCustomAppSetting(setting)
+    }
+
     suspend fun renameApp(packageName: String, customLabel: String?, currentSetting: CustomAppSetting?) {
-        val setting = currentSetting?.copy(customLabel = if (customLabel.isNull_or_Empty()) null else customLabel)
+        val existing = dao.getCustomAppSetting(packageName)
+        val setting = existing?.copy(customLabel = if (customLabel.isNull_or_Empty()) null else customLabel)
             ?: CustomAppSetting(packageName = packageName, customLabel = if (customLabel.isNull_or_Empty()) null else customLabel)
         dao.insertCustomAppSetting(setting)
     }
 
     suspend fun updateCategory(packageName: String, category: String?, currentSetting: CustomAppSetting?) {
-        val setting = currentSetting?.copy(category = if (category.isNull_or_Empty()) null else category)
+        val existing = dao.getCustomAppSetting(packageName)
+        val setting = existing?.copy(category = if (category.isNull_or_Empty()) null else category)
             ?: CustomAppSetting(packageName = packageName, category = if (category.isNull_or_Empty()) null else category)
         dao.insertCustomAppSetting(setting)
     }

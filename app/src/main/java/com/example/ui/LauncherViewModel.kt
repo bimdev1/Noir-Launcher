@@ -56,6 +56,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                 displayLabel = custom?.customLabel ?: item.originalLabel,
                 isFavorite = custom?.isFavorite ?: false,
                 isHidden = custom?.isHidden ?: false,
+                isDocked = custom?.isDocked ?: false,
                 category = custom?.category ?: getFallbackCategory(item.packageName),
                 usageCount = custom?.usageCount ?: 0,
                 lastUsedTimestamp = custom?.lastUsedTimestamp ?: 0L
@@ -159,6 +160,12 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     fun toggleAppHidden(packageName: String, currentSetting: CustomAppSetting?) {
         viewModelScope.launch(Dispatchers.IO) {
             repository.toggleHidden(packageName, currentSetting)
+        }
+    }
+
+    fun toggleAppDocked(packageName: String, currentSetting: CustomAppSetting?) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.toggleDocked(packageName, currentSetting)
         }
     }
 

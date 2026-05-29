@@ -9,6 +9,7 @@ data class CustomAppSetting(
     val customLabel: String? = null,
     val isFavorite: Boolean = false,
     val isHidden: Boolean = false,
+    val isDocked: Boolean = false,
     val category: String? = null,
     val usageCount: Int = 0,
     val lastUsedTimestamp: Long = 0L
