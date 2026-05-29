@@ -141,18 +141,6 @@ fun LauncherHomeScreen(viewModel: LauncherViewModel) {
     val wallpaperPreset = settings["wallpaper_preset"] ?: "Cosmic Night"
     val customGreet = settings["user_greet_name"] ?: "Tim"
 
-    // Real-time time updater
-    var currentTimeString by remember { mutableStateOf("00:00:00") }
-    var currentDateString by remember { mutableStateOf("") }
-
-    LaunchedEffect(Unit) {
-        while (true) {
-            val cal = Calendar.getInstance()
-            currentTimeString = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(cal.time)
-            currentDateString = SimpleDateFormat("EEEE, d MMMM YYYY", Locale.getDefault()).format(cal.time)
-            delay(1000)
-        }
-    }
 
     // List of active favorite applications to show on the desktop workspace
     val favoriteApps = remember(allApps) {
@@ -160,7 +148,7 @@ fun LauncherHomeScreen(viewModel: LauncherViewModel) {
     }
 
     // Visual Brush setup for dynamic backgrounds
-    val backgroundBrush = getBackgroundBrush(wallpaperType, wallpaperPreset)
+    val backgroundBrush = remember(wallpaperType, wallpaperPreset) { getBackgroundBrush(wallpaperType, wallpaperPreset) }
 
     Box(
         modifier = Modifier
@@ -287,100 +275,14 @@ fun LauncherHomeScreen(viewModel: LauncherViewModel) {
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 // ELEGANT MINIMAL DISPLAY HEADER - Left-aligned, clean structure
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth(0.9f)
-                        .padding(top = 32.dp, bottom = 12.dp, start = 8.dp),
-                    horizontalAlignment = Alignment.Start
-                ) {
-                    val weekdayFormat = remember { SimpleDateFormat("EEEE", Locale.getDefault()) }
-                    val dateFormat = remember { SimpleDateFormat("MMMM d", Locale.getDefault()) }
-                    
-                    val now = Calendar.getInstance().time
-                    val weekdayString = weekdayFormat.format(now)
-                    val dateString = dateFormat.format(now)
-
-                    // Large dynamic weekday title standard
-                    Text(
-                        text = weekdayString,
-                        fontSize = 42.sp,
-                        fontWeight = FontWeight.Light,
-                        color = Color(0xFFD0E4FF),
-                        letterSpacing = (-0.5).sp
-                    )
-
-                    // Date underneath
-                    Text(
-                        text = dateString,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Normal,
-                        color = Color(0xFFBBC7DB).copy(alpha = 0.9f),
-                        modifier = Modifier.padding(top = 2.dp)
-                    )
-
-                    // Unified Weather + Time + Greet row
-                    Row(
-                        modifier = Modifier
-                            .padding(top = 10.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable {
-                                if (!locationPermissionState.allPermissionsGranted) {
-                                    locationPermissionState.launchMultiplePermissionRequest()
-                                } else {
-                                    fetchCurrentLocation()
-                                }
-                            }
-                            .padding(vertical = 4.dp, horizontal = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = if (weatherLoading) Icons.Default.Refresh else Icons.Default.Star,
-                            contentDescription = "Weather info icon",
-                            tint = Color(0xFFD0E4FF),
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = if (weatherLoading) "Locating..." else (weatherTemp ?: "72°F"),
-                            color = Color(0xFFE2E2E6),
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Text(
-                            text = "•",
-                            color = Color(0xFFBBC7DB).copy(alpha = 0.4f),
-                            fontSize = 14.sp
-                        )
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Text(
-                            text = weatherLocality,
-                            color = Color(0xFFBBC7DB),
-                            fontSize = 13.5.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Text(
-                            text = "•",
-                            color = Color(0xFFBBC7DB).copy(alpha = 0.4f),
-                            fontSize = 14.sp
-                        )
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Icon(
-                            imageVector = Icons.Default.Face,
-                            contentDescription = "User",
-                            tint = Color(0xFFBBC7DB),
-                            modifier = Modifier.size(15.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = "Hi, $customGreet",
-                            color = Color(0xFFBBC7DB),
-                            fontSize = 13.5.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-                }
+                ClockWeatherHeader(
+                    weatherLoading = weatherLoading,
+                    weatherTemp = weatherTemp,
+                    weatherLocality = weatherLocality,
+                    customGreet = customGreet,
+                    locationPermissionState = locationPermissionState,
+                    onLocationRequest = { fetchCurrentLocation() }
+                )
 
                 // INTEGRATED ELEGANT SEARCH BOX
                 Box(
@@ -1881,5 +1783,137 @@ fun QuickSubDockShortcut(icon: ImageVector, label: String, onClick: () -> Unit) 
             tint = Color(0xFFD0E4FF),
             modifier = Modifier.size(28.dp)
         )
+    }
+}
+
+@OptIn(ExperimentalPermissionsApi::class)
+@Composable
+fun ClockWeatherHeader(
+    weatherLoading: Boolean,
+    weatherTemp: String?,
+    weatherLocality: String,
+    customGreet: String,
+    locationPermissionState: com.google.accompanist.permissions.MultiplePermissionsState,
+    onLocationRequest: () -> Unit
+) {
+    // Real-time time updater isolated here to prevent global recompositions
+    var currentTimeString by remember { mutableStateOf("00:00:00") }
+    var currentDateString by remember { mutableStateOf("") }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            val cal = Calendar.getInstance()
+            currentTimeString = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(cal.time)
+            currentDateString = SimpleDateFormat("EEEE, d MMMM YYYY", Locale.getDefault()).format(cal.time)
+            delay(1000)
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth(0.9f)
+            .padding(top = 32.dp, bottom = 12.dp, start = 8.dp),
+        horizontalAlignment = Alignment.Start
+    ) {
+        val weekdayFormat = remember { SimpleDateFormat("EEEE", Locale.getDefault()) }
+        val dateFormat = remember { SimpleDateFormat("MMMM d", Locale.getDefault()) }
+        
+        val now = Calendar.getInstance().time
+        val weekdayString = weekdayFormat.format(now)
+        val dateString = dateFormat.format(now)
+
+        // Large dynamic weekday title standard
+        Text(
+            text = weekdayString,
+            fontSize = 42.sp,
+            fontWeight = FontWeight.Light,
+            color = Color(0xFFD0E4FF),
+            letterSpacing = (-0.5).sp
+        )
+
+        // Date underneath
+        Text(
+            text = dateString,
+            fontSize = 18.sp,
+            fontWeight = FontWeight.Normal,
+            color = Color(0xFFBBC7DB).copy(alpha = 0.9f),
+            modifier = Modifier.padding(top = 2.dp)
+        )
+
+        // Unified Weather + Time + Greet row
+        Row(
+            modifier = Modifier
+                .padding(top = 10.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .clickable {
+                    if (!locationPermissionState.allPermissionsGranted) {
+                        locationPermissionState.launchMultiplePermissionRequest()
+                    } else {
+                        onLocationRequest()
+                    }
+                }
+                .padding(vertical = 4.dp, horizontal = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = if (weatherLoading) Icons.Default.Refresh else Icons.Default.Star,
+                contentDescription = "Weather info icon",
+                tint = Color(0xFFD0E4FF),
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = if (weatherLoading) "Locating..." else (weatherTemp ?: "72°F"),
+                color = Color(0xFFE2E2E6),
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium
+            )
+            Spacer(modifier = Modifier.width(10.dp))
+            Text(
+                text = "•",
+                color = Color(0xFFBBC7DB).copy(alpha = 0.4f),
+                fontSize = 14.sp
+            )
+            Spacer(modifier = Modifier.width(10.dp))
+            Text(
+                text = weatherLocality,
+                color = Color(0xFFBBC7DB),
+                fontSize = 13.5.sp,
+                fontWeight = FontWeight.Medium
+            )
+            Spacer(modifier = Modifier.width(10.dp))
+            Text(
+                text = "•",
+                color = Color(0xFFBBC7DB).copy(alpha = 0.4f),
+                fontSize = 14.sp
+            )
+            Spacer(modifier = Modifier.width(10.dp))
+            Text(
+                text = currentTimeString.substringBeforeLast(":"),
+                color = Color(0xFFBBC7DB),
+                fontSize = 13.5.sp,
+                fontWeight = FontWeight.Medium
+            )
+            Spacer(modifier = Modifier.width(10.dp))
+            Text(
+                text = "•",
+                color = Color(0xFFBBC7DB).copy(alpha = 0.4f),
+                fontSize = 14.sp
+            )
+            Spacer(modifier = Modifier.width(10.dp))
+            Icon(
+                imageVector = Icons.Default.Face,
+                contentDescription = "User",
+                tint = Color(0xFFBBC7DB),
+                modifier = Modifier.size(15.dp)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = "Hi, $customGreet",
+                color = Color(0xFFBBC7DB),
+                fontSize = 13.5.sp,
+                fontWeight = FontWeight.Medium
+            )
+        }
     }
 }
